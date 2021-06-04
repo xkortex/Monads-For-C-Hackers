@@ -58,9 +58,89 @@ much of the confusion about Monads.
   The slightly outlaw nature of the Engineering Monad doesn't prevent it from being used like a 
   monad 99% of the time. "But it's sloppy and technically incorrect!" Have you *seen* driver code?
   Even outlaw monads are better than no monads. 
-  
+
+
+## brain dump: 
+
+why monads/HKTs? Example with the HTTP dispatch thing and wanting to dependency inject arbitrary methods 
+but also enforce the type of those methods, while abstracting over them opaquely, all with type safety.    
   
 ## Other helpful links: 
 
 [Monad laws for regular developers](https://miklos-martin.github.io/learn/fp/2016/03/10/monad-laws-for-regular-developers.html)
   
+  
+
+## The "fivey" problem: 
+In most imperative languages, it doesn't make sense to have Some(func).map(5). This is because 
+the implementer has to be aware that imperative paradigms cannot intuitively pattern match which 
+part of the curried type signature `f -> a -> b` is the caller and which is the callee. 
+So for example, this has to be implemented as such in python: 
+
+```python
+_default = object()
+class Option(object):
+    
+    def __init__(self, a: A=_default, truthy=False): 
+        if a is _default:
+            self._inner_value = None
+            self._truthy = False
+            return 
+        self._inner_value = a
+        self._truthy = True
+        
+    def __str__(self):
+        return repr(self)
+    
+    def __repr__(self):
+        if self:
+            return f'{self.__class__.__name__}({self._inner_value})'
+        return f'{self.__class__.__name__}()'        
+    def __bool__(self):
+        return self._truthy
+        
+    @classmethod 
+    def pure(cls, f: T) -> FT: 
+        return cls(f) 
+    
+    def apply(ff: Fa2b, fa: FA) -> FB: 
+        if not isinstance(ff, Option): 
+            raise TypeError(f'{type(ff)} is not Option')
+            
+        if not isinstance(fa, Option): 
+            raise TypeError(f'{type(fa)} is not Option')
+        if not ff: 
+            return Nothing()
+        if not fa:
+            return Nothing()
+        f = ff._inner_value
+        a = fa._inner_value
+        if isinstance(f, Callable):
+            return Some(f(a))
+        return Some(a(f))
+    
+    
+    def map(fa: FA, f: Fa2b) -> B:
+        return fa.apply(Option(f))
+    
+class Nothing(Option):
+    def __init__(self, a: A = None, truthy=False): 
+        self._inner_value = a
+        self._truthy = truthy
+
+class Some(Option):
+    def __init__(self, a: A, truthy=True): 
+        self._inner_value = a
+        self._truthy = truthy
+```
+this is fundamentally ok for now.
+A strong type inference language with pattern matching is able to figure out that 
+`f` is `Callable[[A], B]` and `a: A`, therefore `f` must be the caller and `a` the arg.
+This is effectively "for free" in langs with PM, but has to be concreted in imperative
+languages with weaker type compilers.  
+
+Once you have that, you can then do: 
+```python
+Some(square).map(5)
+Some(5).map(square)
+```
